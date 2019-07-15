@@ -34,6 +34,11 @@ Parameters:
       - ON_DEMAND
       - ALWAYS_ON
 
+  AllowedIp:
+    Description: Allowed IP range
+    Type: String
+    Default: 0.0.0.0/0
+
 {% if vpc is defined %}
   VPC:
     Description: VPC name to use
@@ -191,7 +196,7 @@ Resources:
         - - 'fleet/'
           - !Ref AppStreamFleet
       RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/ApplicationAutoScalingForAmazonAppStreamAccess
-      ScalableDimension: 'appstream:fleet:Capacity'
+      ScalableDimension: 'appstream:fleet:DesiredCapacity'
       ServiceNamespace: appstream
     DependsOn:
       - AppStreamFleet
@@ -301,19 +306,25 @@ Resources:
       - AppStreamStack
       
 {% for user in users %}
-  AppStreamUser:
+  AppStreamUser{{ user.last }}:
     Type: "AWS::AppStream::User"
     Properties:
-      UserName: !Ref {{ user }}
+      UserName: {{ user.mail }}
+{% if user.name is defined %}
+      FirstName: {{ user.name }}
+{% endif %}
+      LastName: {{ user.last }}
       AuthenticationType: "USERPOOL"
 
-  AppStreamStackUserAssociation:
+  AppStreamStackUserAssociation{{ user.last }}:
     Type: "AWS::AppStream::StackUserAssociation"
     Properties:
-      UserName: !Ref {{ user }}
+      UserName: {{ user.mail }}
       StackName: !Ref AppStreamStack
-      SendEmailNotification: False
+      SendEmailNotification: True
+      AuthenticationType: "USERPOOL"
     DependsOn:
      - AppStreamStack
-     - AppStreamUser
+     - AppStreamUser{{ user.last }}
+
 {% endfor %}

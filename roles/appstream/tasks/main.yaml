@@ -2,22 +2,22 @@
 - name: check default vpc if not defined
   command: aws ec2 describe-vpcs --region "{{ project_region }}" --filters Name=isDefault,Values=true --output text --query Vpcs[].VpcId
   register: default_vpc
-  when: vpc is not defined
+  when: vpc is not defined and not create_vpc
 
 - name: check default subnets if not defined
   shell: aws ec2 describe-subnets --region "{{ project_region }}" --filters Name=default-for-az,Values=true Name=vpc-id,Values="{{ default_vpc.stdout }}" --output text --query Subnets[].SubnetId | tr "\\t" ", "
-  register: subnets
-  when: subnets is not defined
+  register: default_subnets
+  when: subnets is not defined and not create_vpc
 
 - name: set default vpc if not defined
   set_fact: vpc="{{ default_vpc.stdout }}"
-  when: vpc is not defined
+  when: vpc is not defined and not create_vpc
 
 - name: set default subnet if not defined
-  set_fact: subnets="{{ subnets.stdout }}"
-  when: subnets is not defined
+  set_fact: subnets="{{ default_subnets.stdout }}"
+  when: subnets is not defined and not create_vpc
 
-- name: appstream
+- name: appstream with vpc creation
   local_action:
     module: cloudformation
     aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
@@ -28,33 +28,46 @@
     region: "{{ project_region }}"
     template_body: "{{ lookup('template', 'appstream.yaml.j2') }}"
     template_parameters:
-{% if create_vpc is defined and create_vpc %}
-{% if subnet_a is defined %}
+      AllowedIp: "{{ allowed_ip }}"
       SubnetACidr: "{{ subnet_a }}"
-{% endif %}
-{% if subnet_b is defined %}
       SubnetBCidr: "{{ subnet_b }}"
-{% endif %}
-{% if subnet_c is defined %}
       SubnetCCidr: "{{ subnet_c }}"
-{% endif %}
-{% if vpc_cidr is defined %}
       VpcCidr: "{{ vpc_cidr }}"
-{% endif %}
-{% else %}
+      ApplicationName: "{{ application_name }}"
+      Capacity: "{{ capacity }}"
+      MinCapacity: "{{ min_capacity }}"
+      MaxCapacity: "{{ max_capacity }}"
+      InstanceType: "{{ instance_type }}"
+      FleetType: "{{ fleet_type }}"
+    tags:
+        Stack: "{{ application_name }}-ecs-ansible"
+        Managed by: Managed by Ansible
+        Task type: hosted on new VPC
+  when: create_vpc
+
+- name: appstream on existing vpc
+  local_action:
+    module: cloudformation
+    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+    disable_rollback: true
+    stack_name: "{{ application_name }}-ecs-ansible-managed"
+    state: "{{ state }}"
+    region: "{{ project_region }}"
+    template_body: "{{ lookup('template', 'appstream.yaml.j2') }}"
+    template_parameters:
+      AllowedIp: "{{ allowed_ip }}"
       VPC: "{{ vpc }}"
       Subnets: "{{ subnets }}"
-{% endif %}
       ApplicationName: "{{ application_name }}"
-{% if capacity is defined %}
       Capacity: "{{ capacity }}"
-{% endif %}
-{% if min_capacity is defined %}
       MinCapacity: "{{ min_capacity }}"
-{% endif %}
-{% if max_capacity is defined %}
       MaxCapacity: "{{ max_capacity }}"
-{% endif %}
+      InstanceType: "{{ instance_type }}"
+      FleetType: "{{ fleet_type }}"
     tags: 
         Stack: "{{ application_name }}-ecs-ansible"
         Managed by: Managed by Ansible
+        Task type: hosted on existing VPC
+  when: not create_vpc
+

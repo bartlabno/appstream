@@ -1,0 +1,22 @@
+# generic defaults. application_name is OpenOffice
+# to cover example image previously prepared on AppStream
+state: present
+project_region: eu-central-1
+application_name: OpenOffice
+allowed_ip: 0.0.0.0/0
+
+## Additional options which are expected to be passed within playbook, 
+## but covers template defaults.
+# defaults for vpc creation (vpc_create is True)
+create_vpc: False
+vpc_cidr: 10.10.0.0/16
+subnet_a: 10.10.10.0/24
+subnet_b: 10.10.20.0/24
+subnet_c: 10.10.30.0/24
+
+# defaults for Fleet configuration
+fleet_type: ON_DEMAND
+instance_type: stream.standard.medium
+capacity: 3
+min_capacity: 1
+max_capacity: 5
