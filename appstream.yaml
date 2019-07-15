@@ -1,7 +1,75 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: "This CloudFormation Stack creates AppStream resources within the default VPC."
 
+Parameters:
+  MinCapacity:
+    Description: Minimum Capacity of Streaming Instances
+    Type: Number
+    Default: 1
+
+  MaxCapacity:
+    Description: Maximum Capacity of Streaming Instances
+    Type: Number
+    Default: 5
+
+  Capacity:
+    Description: Desired Capacity of Streaming Instances
+    Type: Number
+    Default: 3
+
+  ApplicationName:
+    Description: Image name of application which will be streamed
+    Type: String
+
+  InstanceType:
+    Description: Type of instance
+    Type: String
+    Default: stream.standard.medium
+
+  FleetType:
+    Description: Type of fleet
+    Type: String
+    Default: ON_DEMAND
+    AllowedValues:
+      - ON_DEMAND
+      - ALWAYS_ON
+
+{% if vpc is defined %}
+  VPC:
+    Description: VPC name to use
+    Type: String
+{% endif %}
+
+{% if subnets is defined %}
+  Subnets:
+    Description: Subnets as dict
+    Type: String
+{% endif %}
+
+{% if create_vpc is defined and create_vpc %}
+  VpcCidr:
+    Description: Ip range for VPC
+    Type: String
+    Default: 10.10.0.0/16
+
+  SubnetACidr:
+    Description: IP range for subnet A
+    Type: String
+    Default: 10.10.10.0/24
+
+  SubnetBCidr:
+    Description: IP range for subnet B
+    Type: String
+    Default: 10.10.20.0/24
+
+  SubnetCCidr:
+    Description: IP range for subnet C
+    Type: String
+    Default: 10.10.30.0/24
+{% endif %}
+
 Resources:
+{% if create_vpc is defined and create_vpc %}
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -24,6 +92,52 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
 
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      VpcId: !Ref VPC
+      CidrBlock: !Ref SubnetACidr
+      MapPublicIpOnLaunch: true
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      VpcId: !Ref VPC
+      CidrBlock: !Ref SubnetBCidr
+      MapPublicIpOnLaunch: true
+
+  SubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 2
+          - Fn::GetAZs: ""
+      VpcId: !Ref VPC
+      CidrBlock: !Ref SubnetCCidr
+      MapPublicIpOnLaunch: true
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTable
+{% endif %}
 
   FleetSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -43,15 +157,22 @@ Resources:
       Name: !Sub ${ApplicationName}-fleet
       Description: !Sub This fleet hosting ${ApplicationName} on AppStream
       DisplayName: !Sub A ${ApplicationName} fleet created in CloudFormation
-      ImageName: !Ref ImageName
+      ImageName: !Ref ApplicationName
       InstanceType: !Ref InstanceType
       FleetType: !Ref FleetType
       ComputeCapacity:
-        DesiredInstances: !Ref DesiredInstances
+        DesiredInstances: !Ref Capacity
       VpcConfig:
+{% if subnets is defined %}
         SubnetIds: !Split
           - ","
           - !Ref Subnets
+{% else %}
+        SubnetIds:
+          - !Ref SubnetA
+          - !Ref SubnetB
+          - !Ref SubnetC
+{% endif %}
         SecurityGroupIds:
           - !Ref FleetSecurityGroup
       MaxUserDurationInSeconds: "57600"
@@ -63,15 +184,14 @@ Resources:
   ScaleTarget:
     Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
     Properties:
-      MinCapacity: 
-      MaxCapacity: 5
+      MinCapacity: !Ref MinCapacity
+      MaxCapacity: !Ref MaxCapacity
       ResourceId:  !Join
         - ''
         - - 'fleet/'
           - !Ref AppStreamFleet
-      RoleARN: >-
-        arn:aws:iam::<aws-account-number>:role/service-role/ApplicationAutoScalingForAmazonAppStreamAccess
-      ScalableDimension: 'appstream:fleet:DesiredCapacity'
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/ApplicationAutoScalingForAmazonAppStreamAccess
+      ScalableDimension: 'appstream:fleet:Capacity'
       ServiceNamespace: appstream
     DependsOn:
       - AppStreamFleet
@@ -165,13 +285,13 @@ Resources:
   AppStreamStack:
     Type: "AWS::AppStream::Stack"
     Properties:
-      Name: "DemoStack"
-      Description: "This demo stack was created using CloudFormation"
+      Name: !Sub ${ApplicationName}-Stack
+      Description: "This stack was created using CloudFormation"
       StorageConnectors:
         - ConnectorType: "HOMEFOLDERS"
-          ResourceIdentifier: "TestCloudFormationStackBucket"
+          ResourceIdentifier: !Sub ${ApplicationName}Bucket
           
-  AppStreamDemoStackFleetAssociation:
+  AppStreamStackFleetAssociation:
     Type: 'AWS::AppStream::StackFleetAssociation'
     Properties:
       FleetName: !Ref AppStreamFleet
@@ -180,20 +300,20 @@ Resources:
       - AppStreamFleet
       - AppStreamStack
       
+{% for user in users %}
   AppStreamUser:
     Type: "AWS::AppStream::User"
     Properties:
-      UserName: "user@email.com"
-      FirstName: "John"
-      LastName: "Smith"
+      UserName: !Ref {{ user }}
       AuthenticationType: "USERPOOL"
-      
+
   AppStreamStackUserAssociation:
     Type: "AWS::AppStream::StackUserAssociation"
     Properties:
-      UserName: "user@email.com"
+      UserName: !Ref {{ user }}
       StackName: !Ref AppStreamStack
       SendEmailNotification: False
     DependsOn:
      - AppStreamStack
      - AppStreamUser
+{% endfor %}
