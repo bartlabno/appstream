@@ -1,0 +1,73 @@
+---
+- name: check default vpc if not defined
+  command: aws ec2 describe-vpcs --region "{{ project_region }}" --filters Name=isDefault,Values=true --output text --query Vpcs[].VpcId
+  register: default_vpc
+  when: vpc is not defined and not create_vpc
+
+- name: check default subnets if not defined
+  shell: aws ec2 describe-subnets --region "{{ project_region }}" --filters Name=default-for-az,Values=true Name=vpc-id,Values="{{ default_vpc.stdout }}" --output text --query Subnets[].SubnetId | tr "\\t" ", "
+  register: default_subnets
+  when: subnets is not defined and not create_vpc
+
+- name: set default vpc if not defined
+  set_fact: vpc="{{ default_vpc.stdout }}"
+  when: vpc is not defined and not create_vpc
+
+- name: set default subnet if not defined
+  set_fact: subnets="{{ default_subnets.stdout }}"
+  when: subnets is not defined and not create_vpc
+
+- name: appstream with vpc creation
+  local_action:
+    module: cloudformation
+    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+    disable_rollback: true
+    stack_name: "{{ application_name }}-ecs-ansible-managed"
+    state: "{{ state }}"
+    region: "{{ project_region }}"
+    template_body: "{{ lookup('template', 'appstream.yaml.j2') }}"
+    template_parameters:
+      AllowedIp: "{{ allowed_ip }}"
+      SubnetACidr: "{{ subnet_a }}"
+      SubnetBCidr: "{{ subnet_b }}"
+      SubnetCCidr: "{{ subnet_c }}"
+      VpcCidr: "{{ vpc_cidr }}"
+      ApplicationName: "{{ application_name }}"
+      Capacity: "{{ capacity }}"
+      MinCapacity: "{{ min_capacity }}"
+      MaxCapacity: "{{ max_capacity }}"
+      InstanceType: "{{ instance_type }}"
+      FleetType: "{{ fleet_type }}"
+    tags:
+        Stack: "{{ application_name }}-ecs-ansible"
+        Managed by: Managed by Ansible
+        Task type: hosted on new VPC
+  when: create_vpc
+
+- name: appstream on existing vpc
+  local_action:
+    module: cloudformation
+    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+    disable_rollback: true
+    stack_name: "{{ application_name }}-ecs-ansible-managed"
+    state: "{{ state }}"
+    region: "{{ project_region }}"
+    template_body: "{{ lookup('template', 'appstream.yaml.j2') }}"
+    template_parameters:
+      AllowedIp: "{{ allowed_ip }}"
+      VPC: "{{ vpc }}"
+      Subnets: "{{ subnets }}"
+      ApplicationName: "{{ application_name }}"
+      Capacity: "{{ capacity }}"
+      MinCapacity: "{{ min_capacity }}"
+      MaxCapacity: "{{ max_capacity }}"
+      InstanceType: "{{ instance_type }}"
+      FleetType: "{{ fleet_type }}"
+    tags: 
+        Stack: "{{ application_name }}-ecs-ansible"
+        Managed by: Managed by Ansible
+        Task type: hosted on existing VPC
+  when: not create_vpc
+
