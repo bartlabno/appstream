@@ -18,7 +18,7 @@ Simple clone this repository or use ansible-pull. Create users.yaml file or edit
 ```ansible-playbook site.yaml --extra-vars @users.yaml```
 
 # Variables
-users are being stored by default in users.yaml file, away from defaults. defaults/main.yaml contain all mandatory and optional variables which you can add using ansible specific best practicies for variables. By default please do not touch defaults.yaml!
+users are being stored by default in users.yaml file, away from defaults. defaults/main.yaml contain all mandatory and optional variables which you can add using ansible specific best practicies for variables. By default please do not touch defaults!
 
 # ImageBuilder
 Unfortunately, Image Builder doesn't support some Powershell scripting and automation on creation of Images. That's why ImageBuilder to creation of base Image has been done manually by myself. In this case scenario it is OpenOffice
